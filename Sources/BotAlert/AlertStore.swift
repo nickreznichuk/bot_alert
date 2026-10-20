@@ -180,6 +180,8 @@ final class AlertStore: NSObject, ObservableObject, UNUserNotificationCenterDele
             ]
             try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
             plist.write(toFile: path, atomically: true)
+            // Takes effect now: the launchd copy starts and replaces this one (see SingleInstance).
+            SingleInstance.launchctl(["bootstrap", "gui/\(getuid())", path])
         } else {
             try? FileManager.default.removeItem(atPath: path)
         }

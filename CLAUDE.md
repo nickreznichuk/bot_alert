@@ -57,6 +57,11 @@ UI strings and user-facing docs are **Ukrainian**; code comments are English.
   get full resolution each scan, but if they hold ≥300 fds (dev-server watchers) only every 5 s; signed apps
   only resolve fds new since last scan (`fdPaths` cache) plus a full pass every 30 s. Re-measure with
   `top -l 6 -s 3 -pid $(pgrep -x BotAlert) -stats pid,cpu,mem` after changing the scan loop.
+- **Single instance** (`SingleInstance` in `BotAlertApp.swift`, runs in `App.init` before the store exists):
+  the launchd job (`XPC_SERVICE_NAME == local.botalert.agent`) always wins and force-terminates other copies;
+  any other launch (Login Items, Finder, `open -n`) does `launchctl kickstart` (bootstrap if needed) and exits,
+  so a manual open after "Quit" still ends up launchd-managed. Without the plist it falls back to "exit if
+  another copy runs". launchd throttles restarts to once per 10 s if the process died within 10 s of starting.
 - Never run two monitors at once (e.g. a debug build next to the installed app): both re-arm the same
   tripwires and reads get missed. `AlertStore(startMonitor: false)` exists for the snapshot tool.
 - A process caught between fork and exec shows the parent's binary — records younger than 5 s are rebuilt

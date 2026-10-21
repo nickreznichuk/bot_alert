@@ -59,7 +59,10 @@ UI strings and user-facing docs are **Ukrainian**; code comments are English.
 - **Attribution.** A read with no owner triggers an immediate fd scan; if nobody holds the file, live processes
   are scored (`currentSuspects`): suspicious exec +sev+1, net flag (bad port / RPC / odd port) +3, age <2 min +2
   (<15 min +1), unsigned non-interpreter +1, has connections +1. Score ≥3 = suspect (weak touch), **≥4 = may be
-  frozen**. Never freeze "every node": an early version froze the user's `next dev` server.
+  frozen**. Never freeze "every node": an early version froze the user's `next dev` server. Without concrete
+  evidence (exec flag above info, or a net flag) the score is capped at 2: "fresh + unsigned" or "fresh + has
+  connections" is just timing — a new `pnpm dev` or Telegram script coinciding with the benign 60 s `~/.ssh`
+  listing produced red alerts before this cap.
 - **Critical** = process holds a sensitive file AND has an external TCP connection (`criticalSent` prevents
   repeats), or a sweep (≥3 distinct items or ≥2 categories read within 60 s, rate-limited to once per 5 min).
 - **CPU budget ~1%.** Resolving vnode paths is the hot spot. Risky processes (interpreters, unsigned, flagged)

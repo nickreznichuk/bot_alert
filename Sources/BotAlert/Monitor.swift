@@ -483,7 +483,8 @@ final class Monitor {
         emit(ev)
     }
 
-    /// Ranks live processes by concrete evidence. Score >= 3 marks a suspect, >= 4 is enough to freeze it.
+    /// Ranks live processes. Score >= 3 marks a suspect, >= 4 is enough to freeze it; both need concrete
+    /// evidence (a flagged command line or a flagged connection).
     private func currentSuspects() -> [(rec: ProcRec, score: Int, reasons: [String])] {
         let now = Date()
         var out: [(rec: ProcRec, score: Int, reasons: [String])] = []
@@ -498,6 +499,11 @@ final class Monitor {
             else if age < 900 { score += 1; reasons.append("запущено \(Int(age / 60)) хв тому") }
             if !r.interpreter && r.sign.isAdhocOrUnsigned { score += 1; reasons.append("без підпису") }
             if !r.lastConns.isEmpty { score += 1; reasons.append("є з'єднання") }
+            // Age, missing signature and connections only rank candidates. On their own they just mean
+            // "started around the same time" (a fresh `pnpm dev` coinciding with a benign periodic read),
+            // so without concrete evidence a process can never reach suspect level.
+            let evidence = (r.execFlag.map { $0 > .info } ?? false) || r.netFlag != nil
+            if !evidence { score = min(score, 2) }
             if score >= 2 { out.append((r, score, reasons)) }
         }
         // When someone has real evidence against them, don't clutter the list with weak matches.

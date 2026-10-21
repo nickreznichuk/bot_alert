@@ -54,6 +54,9 @@ struct Owners {
 struct WatchSpec {
     let path: String
     let label: String
+    /// A directory whose listing reveals nothing secret because its sensitive children have their own
+    /// tripwires. Benign apps list such dirs on timers, so a listing alone (no suspect) is only logged.
+    var listingOnly = false
 }
 
 struct Target {
@@ -89,6 +92,17 @@ enum Rules {
         interpreters.contains(name) || name.hasPrefix("python3.") || name.hasPrefix("perl5")
     }
 
+    /// The script an interpreter runs: its first non-flag argument. Later arguments are just data.
+    static func scriptArg(name: String, args: [String]) -> String? {
+        isInterpreter(name) ? args.dropFirst().first(where: { !$0.hasPrefix("-") }) : nil
+    }
+
+    /// What "Trust" remembers. Interpreters are trusted per script: trusting all of node would also
+    /// trust whatever a malicious repo runs with it.
+    static func trustKey(name: String, path: String, args: [String]) -> String {
+        isInterpreter(name) ? path + " " + (scriptArg(name: name, args: args) ?? "") : path
+    }
+
     static func isLolbin(_ name: String) -> Bool {
         lolbins.contains(name) || name.hasPrefix("python3.") || name.hasPrefix("perl5")
     }
@@ -115,7 +129,7 @@ enum Rules {
         ".dotnet", ".swiftpm", ".oh-my-zsh", ".conda", ".miniconda3", ".anaconda3", ".bundle", ".kube", ".rd",
         ".colima", ".lima", ".terraform.d", ".codeium", ".windsurf", ".gemini", ".ollama", ".copilot", ".continue",
         ".lmstudio", ".zed", ".jenv", ".nodenv", ".goenv", ".go", ".vim", ".emacs.d", ".tmux", ".antigen", ".zinit",
-        ".Trash", ".codex", ".kiro", ".aider", ".expo",
+        ".Trash", ".codex", ".kiro", ".aider", ".expo", ".fzf", ".tmux", ".zplug", ".rye", ".uv", ".poetry",
     ]
 
     /// Dropper directories seen in InvisibleFerret / BeaverTail campaigns.
@@ -172,7 +186,7 @@ enum Rules {
         t.append(Target(id: "ssh", title: "~/.ssh", category: .ssh, owners: sshOwners, atimeWatch: true,
                         prefixes: [home + "/.ssh/"]) {
             let dir = home + "/.ssh"
-            var specs = [WatchSpec(path: dir, label: "папку ~/.ssh (перегляд списку ключів)")]
+            var specs = [WatchSpec(path: dir, label: "папку ~/.ssh (перегляд списку ключів)", listingOnly: true)]
             let skip: Set<String> = ["known_hosts", "known_hosts.old", "config", "authorized_keys", "environment", ".DS_Store"]
             for p in subdirs(dir) {
                 let name = (p as NSString).lastPathComponent
@@ -197,7 +211,8 @@ enum Rules {
                         WatchSpec(path: profile + "/Cookies", label: "\(b.title) [\(pn)]: cookies (сесії)"),
                         WatchSpec(path: profile + "/Network/Cookies", label: "\(b.title) [\(pn)]: cookies (сесії)"),
                         WatchSpec(path: profile + "/Web Data", label: "\(b.title) [\(pn)]: картки й автозаповнення"),
-                        WatchSpec(path: profile + "/Local Extension Settings", label: "\(b.title) [\(pn)]: дані розширень (гаманці)"),
+                        WatchSpec(path: profile + "/Local Extension Settings", label: "\(b.title) [\(pn)]: список розширень",
+                                  listingOnly: true),
                     ]
                     for (id, wallet) in walletExtensions {
                         specs.append(WatchSpec(path: profile + "/Local Extension Settings/" + id,
@@ -319,8 +334,10 @@ enum Rules {
                         "Інлайн-код \(code.count) символів:\n" + String(code.prefix(300)))
             }
         }
+        // Only the script itself counts: `node tool.mjs /tmp/request.json` is not "running a script from /tmp".
+        let script = scriptArg(name: name, args: args)
         // Binaries / scripts living in hidden home dirs that aren't known tooling.
-        let candidates = [path] + args.dropFirst().filter { $0.hasPrefix("/") }
+        let candidates = [path] + [script].compactMap { $0 }
         for p in candidates where p.hasPrefix(home + "/.") {
             let comp = String(p.dropFirst(home.count + 1).split(separator: "/").first ?? "")
             if !knownHiddenDirs.contains(comp) {
@@ -332,8 +349,7 @@ enum Rules {
         if sign.isAdhocOrUnsigned, tmpPrefixes.contains(where: { path.hasPrefix($0) }) {
             return (.medium, "Непідписана програма запущена з тимчасової папки", path)
         }
-        if isInterpreter(name), let script = args.dropFirst().first(where: { $0.hasPrefix("/") }),
-           tmpPrefixes.contains(where: { script.hasPrefix($0) }) {
+        if let script, tmpPrefixes.contains(where: { script.hasPrefix($0) }) {
             return (.medium, "\(name) запускає скрипт з тимчасової папки", script)
         }
         return nil

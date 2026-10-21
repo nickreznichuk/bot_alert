@@ -74,7 +74,7 @@ final class AlertStore: NSObject, ObservableObject, UNUserNotificationCenterDele
         let now = Date()
         if let last = lastByKey[ev.dedupeKey], now.timeIntervalSince(last) < 600 { return }
         lastByKey[ev.dedupeKey] = now
-        if let p = ev.processPath, trusted.contains(p), ev.frozen.isEmpty { return }
+        if let k = ev.trustKey, trusted.contains(k), ev.frozen.isEmpty { return }
         alerts.insert(Alert(date: now, event: ev, frozen: ev.frozen), at: 0)
         if alerts.count > 400 { alerts.removeLast(alerts.count - 400) }
         log(ev)
@@ -149,9 +149,9 @@ final class AlertStore: NSObject, ObservableObject, UNUserNotificationCenterDele
     }
 
     func trust(_ alert: Alert) {
-        guard let path = alert.event.processPath else { return }
+        guard let key = alert.event.trustKey else { return }
         if !alert.frozen.isEmpty { resume(alert) }
-        trusted.insert(path)
+        trusted.insert(key)
         update(alert) { $0.seen = true }
     }
 

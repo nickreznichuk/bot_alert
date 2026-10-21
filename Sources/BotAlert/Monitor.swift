@@ -10,6 +10,8 @@ struct AlertEvent {
     let processPath: String?
     let dedupeKey: String
     var frozen: [pid_t] = []
+    /// What the "Trust" button stores (see Rules.trustKey); filled in by Monitor.emit.
+    var trustKey: String?
 }
 
 struct ConnRow: Identifiable, Hashable {
@@ -42,6 +44,7 @@ final class ProcRec {
     let candidate: Bool
     let interpreter: Bool
     let ownerOf: Set<Int>
+    let trustKey: String
     var execFlag: Severity?
     var netFlag: String?
     var criticalSent = false
@@ -60,6 +63,7 @@ final class ProcRec {
         var owns = Set<Int>()
         for (i, t) in Rules.targets.enumerated() where t.owners.matches(name: name, path: path, args: joined) { owns.insert(i) }
         ownerOf = owns
+        trustKey = Rules.trustKey(name: name, path: path, args: args)
     }
 
     var display: String { "\(name) (pid \(pid))" }
@@ -180,14 +184,14 @@ final class Monitor {
     }
 
     private func evaluateExec(_ rec: ProcRec) {
-        guard !trusted.contains(rec.path),
+        guard !trusted.contains(rec.trustKey),
               let (sev, title, why) = Rules.execVerdict(name: rec.name, path: rec.path, args: rec.args, sign: rec.sign)
         else { return }
         rec.execFlag = sev
         var ev = AlertEvent(severity: sev, title: title, detail: why + "\n\n" + describe(rec), pid: rec.pid,
                             processName: rec.name, processPath: rec.path, dedupeKey: "exec:\(title):\(rec.path)")
         if sev == .critical { ev.frozen = freeze(rec.pid) }
-        onAlert?(ev)
+        emit(ev)
     }
 
     private func describe(_ rec: ProcRec) -> String {
@@ -262,7 +266,7 @@ final class Monitor {
             }
             fdPaths[rec.pid] = newPaths
             rec.lastConns = conns
-            let isTrusted = trusted.contains(rec.path)
+            let isTrusted = trusted.contains(rec.trustKey)
             if !isTrusted {
                 for (ti, p) in touched { handleTouch(rec, target: ti, path: p) }
                 for c in conns where !rec.remotes.contains(c.key) {
@@ -299,9 +303,9 @@ final class Monitor {
                                 detail: "Відкрито: \(path)\nЦе типова поведінка стілера: читає ключі/паролі та одразу відправляє їх.\n\n" + describe(rec),
                                 pid: rec.pid, processName: rec.name, processPath: rec.path, dedupeKey: "exfil:\(rec.pid)")
             ev.frozen = freeze(rec.pid)
-            onAlert?(ev)
+            emit(ev)
         } else if first {
-            onAlert?(AlertEvent(severity: .high, title: "\(rec.name) відкрив \(label)",
+            emit(AlertEvent(severity: .high, title: "\(rec.name) відкрив \(label)",
                                 detail: "Цей процес не має права читати ці дані.\nВідкрито: \(path)\n\n" + describe(rec),
                                 pid: rec.pid, processName: rec.name, processPath: rec.path, dedupeKey: "touch:\(rec.pid):\(ti)"))
         }
@@ -317,11 +321,11 @@ final class Monitor {
                                 detail: "Процес щойно читав «\(st.label)», а тепер підключається до \(c.key).\n\n" + describe(rec),
                                 pid: rec.pid, processName: rec.name, processPath: rec.path, dedupeKey: "exfil:\(rec.pid)")
             ev.frozen = freeze(rec.pid)
-            onAlert?(ev)
+            emit(ev)
             return
         }
         if let wt = rec.weakTouch, now.timeIntervalSince(wt.at) < 600 {
-            onAlert?(AlertEvent(severity: .high, title: "Підозрюваний процес \(rec.name) підключився до \(c.key)",
+            emit(AlertEvent(severity: .high, title: "Підозрюваний процес \(rec.name) підключився до \(c.key)",
                                 detail: "Під час його роботи хтось прочитав «\(wt.label)».\n\n" + describe(rec),
                                 pid: rec.pid, processName: rec.name, processPath: rec.path, dedupeKey: "weaknet:\(rec.pid):\(c.key)"))
             return
@@ -329,23 +333,23 @@ final class Monitor {
         guard rec.interpreter || rec.sign.isAdhocOrUnsigned else { return }
         if Rules.badPorts.contains(c.port) {
             rec.netFlag = "порт \(c.port)"
-            onAlert?(AlertEvent(severity: .high, title: "\(rec.name) підключається на порт \(c.port)",
+            emit(AlertEvent(severity: .high, title: "\(rec.name) підключається на порт \(c.port)",
                                 detail: "Порт \(c.port) використовують бекдори BeaverTail/InvisibleFerret (фейкові тестові завдання й репозиторії).\nАдреса: \(c.key)\n\n" + describe(rec),
                                 pid: rec.pid, processName: rec.name, processPath: rec.path, dedupeKey: "badport:\(rec.pid):\(c.port)"))
         } else if let flag = rec.execFlag, flag >= .medium {
-            onAlert?(AlertEvent(severity: .high, title: "Підозрілий процес \(rec.name) підключився до \(c.key)",
+            emit(AlertEvent(severity: .high, title: "Підозрілий процес \(rec.name) підключився до \(c.key)",
                                 detail: describe(rec), pid: rec.pid, processName: rec.name, processPath: rec.path,
                                 dedupeKey: "flagnet:\(rec.pid)"))
         } else if rec.interpreter, let host = rpcIPs[c.ip] {
             rec.netFlag = "блокчейн \(host)"
-            onAlert?(AlertEvent(severity: .medium, title: "\(rec.name) звертається до блокчейн-вузла \(host)",
+            emit(AlertEvent(severity: .medium, title: "\(rec.name) звертається до блокчейн-вузла \(host)",
                                 detail: "Так шкідливі репозиторії завантажують прихований код (його зберігають у транзакціях). Якщо ти не працюєш з web3 — це дуже підозріло.\nАдреса: \(c.key)\n\n" + describe(rec),
                                 pid: rec.pid, processName: rec.name, processPath: rec.path, dedupeKey: "rpc:\(rec.pid)"))
         } else if rec.interpreter, !Rules.commonPorts.contains(c.port) {
             let devPorts: Set<UInt16> = [3306, 5432, 6543, 6379, 27017, 9200, 5672, 9092, 11211, 1433, 8080, 3000]
             let isDev = devPorts.contains(c.port)
             if !isDev { rec.netFlag = rec.netFlag ?? "порт \(c.port)" }
-            onAlert?(AlertEvent(severity: isDev ? .info : .medium,
+            emit(AlertEvent(severity: isDev ? .info : .medium,
                                 title: "\(rec.name) підключається на незвичний порт \(c.port)",
                                 detail: "Адреса: \(c.key)\n\n" + describe(rec), pid: rec.pid, processName: rec.name,
                                 processPath: rec.path, dedupeKey: "port:\(rec.pid):\(c.port)"))
@@ -427,6 +431,13 @@ final class Monitor {
         let suspects = currentSuspects()
         for s in suspects where s.score >= 3 { s.rec.weakTouch = (item.spec.label, now) }
         let strong = suspects.first { $0.score >= 3 }
+        if item.spec.listingOnly && strong == nil {
+            // Some long-running app lists the folder on a timer; the secrets inside have their own tripwires.
+            emit(AlertEvent(severity: .info, title: "Переглянуто список файлів: \(item.spec.label)",
+                                detail: "Прочитано лише назви файлів, не їх вміст. Підозрілих процесів немає, тож це, найімовірніше, звичайна програма.",
+                                pid: nil, processName: nil, processPath: nil, dedupeKey: "list:\(item.spec.path)"))
+            return
+        }
         var detail = "Файл: \(item.spec.path.replacingOccurrences(of: Rules.home, with: "~"))\n"
         detail += "Жодна програма, якій можна читати ці дані, в цей момент не працювала.\n\n"
         if suspects.isEmpty {
@@ -434,7 +445,7 @@ final class Monitor {
         } else {
             detail += "Ймовірні винуватці:\n" + describeSuspects(suspects)
         }
-        onAlert?(AlertEvent(severity: strong == nil ? .medium : .high, title: "Хтось прочитав: \(item.spec.label)",
+        emit(AlertEvent(severity: strong == nil ? .medium : .high, title: "Хтось прочитав: \(item.spec.label)",
                             detail: detail, pid: strong?.rec.pid, processName: strong?.rec.name,
                             processPath: strong?.rec.path, dedupeKey: "read:\(item.spec.path)"))
         recordRead(at: now, target: ti, label: item.spec.label)
@@ -469,14 +480,14 @@ final class Monitor {
                             pid: top?.rec.pid, processName: top?.rec.name, processPath: top?.rec.path,
                             dedupeKey: "sweep")
         ev.frozen = frozen.sorted()
-        onAlert?(ev)
+        emit(ev)
     }
 
     /// Ranks live processes by concrete evidence. Score >= 3 marks a suspect, >= 4 is enough to freeze it.
     private func currentSuspects() -> [(rec: ProcRec, score: Int, reasons: [String])] {
         let now = Date()
         var out: [(rec: ProcRec, score: Int, reasons: [String])] = []
-        for r in procs.values where r.candidate && !trusted.contains(r.path) && r.ownerOf.isEmpty {
+        for r in procs.values where r.candidate && !trusted.contains(r.trustKey) && r.ownerOf.isEmpty {
             guard r.interpreter || r.sign.isAdhocOrUnsigned || r.execFlag != nil else { continue }
             var score = 0
             var reasons: [String] = []
@@ -537,7 +548,7 @@ final class Monitor {
             guard lstat(f, &st) == 0 else { continue }
             if let old = rcMtimes[f], !tsEqual(old, st.st_mtimespec) {
                 let tail = (try? String(contentsOfFile: f, encoding: .utf8))?.split(separator: "\n").suffix(4).joined(separator: "\n") ?? ""
-                onAlert?(AlertEvent(severity: .medium, title: "Змінено \(f.replacingOccurrences(of: Rules.home, with: "~"))",
+                emit(AlertEvent(severity: .medium, title: "Змінено \(f.replacingOccurrences(of: Rules.home, with: "~"))",
                                     detail: "Цей файл виконується при кожному відкритті терміналу — шкідливе ПЗ додає туди свій запуск. Якщо редагував ти — ігноруй.\n\nОстанні рядки:\n\(tail)",
                                     pid: nil, processName: nil, processPath: f, dedupeKey: "rc:\(f):\(st.st_mtimespec.tv_sec)"))
             }
@@ -553,13 +564,19 @@ final class Monitor {
             if let args = plist["ProgramArguments"] as? [String] { program = args.joined(separator: " ") }
             else if let p = plist["Program"] as? String { program = p }
         }
-        onAlert?(AlertEvent(severity: .high,
+        emit(AlertEvent(severity: .high,
                             title: sinceLastRun ? "Новий автозапуск з'явився, поки BotAlert був вимкнений" : "Новий автозапуск: \(file)",
                             detail: "Файл: \(path)\nЗапускає: \(program.isEmpty ? "?" : program)\n\nТак шкідливе ПЗ закріплюється в системі. Якщо ти нічого не встановлював — видали цей файл.",
                             pid: nil, processName: nil, processPath: path, dedupeKey: "persist:\(path)"))
     }
 
     // MARK: - Helpers
+
+    private func emit(_ ev: AlertEvent) {
+        var ev = ev
+        if let pid = ev.pid, let rec = procs[pid] { ev.trustKey = rec.trustKey }
+        onAlert?(ev)
+    }
 
     private func resolveRPCHosts() {
         DispatchQueue.global(qos: .background).async { [weak self] in

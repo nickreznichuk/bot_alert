@@ -160,7 +160,10 @@ struct AlertRow: View {
                 }
                 if ev.processPath != nil {
                     Button("У Finder") { store.reveal(alert) }
-                    if ev.pid != nil { Button("Довіряти") { store.trust(alert) } }
+                }
+                if ev.trustKey != nil {
+                    Button(Rules.isInterpreter(ev.processName ?? "") ? "Довіряти скрипту" : "Довіряти") { store.trust(alert) }
+                        .help(ev.trustKey ?? "")
                 }
                 Spacer()
                 Button(expanded ? "Згорнути" : "Детальніше") { expanded.toggle() }.buttonStyle(.link)
@@ -223,7 +226,15 @@ struct SettingsPane: View {
                 Section("Довірені програми") {
                     ForEach(store.trusted.sorted(), id: \.self) { p in
                         HStack {
-                            Text(p).font(.caption).lineLimit(1).truncationMode(.middle)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(p.replacingOccurrences(of: Rules.home, with: "~"))
+                                    .font(.caption).lineLimit(1).truncationMode(.middle)
+                                // Entries from older versions trusted a whole interpreter; that is ignored now.
+                                if !p.contains(" "), Rules.isInterpreter((p as NSString).lastPathComponent) {
+                                    Text("Не діє: інтерпретатору (node, python…) можна довіряти лише для конкретного скрипта")
+                                        .font(.caption2).foregroundStyle(.orange)
+                                }
+                            }
                             Spacer()
                             Button("Прибрати") { store.trusted.remove(p) }.controlSize(.small)
                         }

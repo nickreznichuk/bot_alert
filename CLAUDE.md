@@ -33,6 +33,7 @@ UI strings and user-facing docs are **Ukrainian**; code comments are English.
 | `Sources/BotAlert/BotAlertApp.swift` | `@main`, single-instance guard, accessory activation policy, window opened from notification click |
 | `tools/simulate/*` | Harmless attack simulations (TEST-NET IPs, only list dirs / hold a dir fd, never read secrets) |
 | `tools/snapshot/main.swift` | Offscreen UI renderer used by `--snapshot` |
+| `tools/who_reads.py` | Diagnoses false positives: polls a path's atime at 20 Hz and prints young processes + holders on each read |
 
 ## How detection works (and why — hard-won lessons)
 
@@ -47,6 +48,14 @@ UI strings and user-facing docs are **Ukrainian**; code comments are English.
   - Browsers keep their DBs open and reading via open fds does not bump atime, so browser targets use
     `ownerGraceOnly`: only the main (non-"Helper") process starting <60 s ago or quitting <20 s ago excuses a read.
     Keychain has no atime watch (securityd touches it constantly) — fd-open only.
+- **Listing-only dirs** (`WatchSpec.listingOnly`: `~/.ssh` itself, Chromium `Local Extension Settings`): some
+  long-running app on this Mac lists `~/.ssh` exactly every 60 s, which produced a "someone read ~/.ssh" alert
+  every 10 min. A listing reveals no secret (keys / wallet dirs have their own tripwires), so without a
+  score ≥3 suspect it is only an `.info` event and does not count toward the sweep. Use
+  `python3 tools/who_reads.py PATH` to see what was running at each read when chasing such noise.
+- **Trust is per script for interpreters** (`Rules.trustKey`: `path + " " + first non-flag arg`). Trusting the
+  whole `node` binary (an early version allowed it, the user clicked it) would blind BotAlert to exactly the
+  malicious-repo attack. Old bare-interpreter entries stay in the list but are ignored and flagged in Settings.
 - **Attribution.** A read with no owner triggers an immediate fd scan; if nobody holds the file, live processes
   are scored (`currentSuspects`): suspicious exec +sev+1, net flag (bad port / RPC / odd port) +3, age <2 min +2
   (<15 min +1), unsigned non-interpreter +1, has connections +1. Score ≥3 = suspect (weak touch), **≥4 = may be

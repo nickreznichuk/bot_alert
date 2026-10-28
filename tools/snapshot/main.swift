@@ -11,9 +11,9 @@ func ev(_ s: Severity, _ t: String, _ d: String, pid: pid_t? = nil, frozen: [pid
 let out = CommandLine.arguments[1]
 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
   store.alerts = [
-    ev(.critical, "Схоже на крадіжку даних (масове читання)", "За хвилину прочитано 2 чутливих місць (SSH-ключі, Браузери):\n• Google Chrome [Default]: дані розширень (гаманці)\n• папку ~/.ssh (перегляд списку ключів)\n\nПідозрювані (у дужках — чому):\n• node (pid 49136) [підозріла команда, порт 1224, запущено 4 с тому, є з'єднання]", pid: getpid(), frozen: [49136]),
-    ev(.high, "node підключається на порт 1224", "Порт 1224 використовують бекдори BeaverTail/InvisibleFerret.\nАдреса: 203.0.113.1:1224", pid: getpid()),
-    ev(.medium, "Змінено ~/.zshrc", "Цей файл виконується при кожному відкритті терміналу."),
+    ev(.critical, "Looks like data theft (mass read)", "2 sensitive locations were read within a minute (SSH keys, Browsers):\n• Google Chrome [Default]: list of extensions\n• the ~/.ssh folder (list of keys)\n\nSuspects (reasons in brackets):\n• node (pid 49136) [port 1224, started 4 s ago, has connections]", pid: getpid(), frozen: [49136]),
+    ev(.high, "node is connecting to port 1224", "Port 1224 is used by the BeaverTail/InvisibleFerret backdoors.\nAddress: 203.0.113.1:1224", pid: getpid()),
+    ev(.medium, "Changed ~/.zshrc", "This file runs every time you open a terminal."),
   ]
   func render(_ v: some View, _ name: String, _ size: NSSize) {
     let host = NSHostingView(rootView: v.frame(width: size.width, height: size.height))

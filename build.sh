@@ -23,13 +23,13 @@ stop_running() {
 if [[ "$MODE" == "--uninstall" ]]; then
   stop_running
   rm -rf "$DEST" "$PLIST"
-  echo "BotAlert видалено. Журнал (~/Library/Logs/BotAlert) і налаштування залишились:"
+  echo "BotAlert removed. The log (~/Library/Logs/BotAlert) and settings were kept; to wipe them:"
   echo "  rm -rf ~/Library/Logs/BotAlert && defaults delete $BUNDLE_ID"
   exit 0
 fi
 
 if ! xcrun --find swiftc >/dev/null 2>&1; then
-  echo "Не знайдено swiftc. Встанови Command Line Tools: xcode-select --install" >&2
+  echo "swiftc not found. Install the Command Line Tools: xcode-select --install" >&2
   exit 1
 fi
 
@@ -43,7 +43,7 @@ pick_sdk() {
     [[ -n "$sdk" && -d "$sdk" ]] || continue
     if swiftc -typecheck -sdk "$sdk" -target "$ARCH-apple-macos13" "$probe" >/dev/null 2>&1; then echo "$sdk"; return; fi
   done
-  echo "Не знайдено macOS SDK, сумісний з компілятором. Перевстанови Command Line Tools або Xcode." >&2
+  echo "No macOS SDK compatible with the compiler. Reinstall the Command Line Tools or Xcode." >&2
   exit 1
 }
 
@@ -51,12 +51,12 @@ SDK=$(pick_sdk)
 echo "SDK: $SDK"
 
 if [[ "$MODE" == "--snapshot" ]]; then
-  OUT="${2:?Вкажи папку: ./build.sh --snapshot /tmp/shots}"
+  OUT="${2:?Give an output folder: ./build.sh --snapshot /tmp/shots}"
   mkdir -p "$OUT" build
   swiftc -O -sdk "$SDK" -target "$ARCH-apple-macos13" -o build/snapshot \
     $(ls Sources/BotAlert/*.swift | grep -v BotAlertApp.swift) tools/snapshot/main.swift
   ./build/snapshot "$OUT"
-  echo "Скріншоти: $OUT/{alerts,net,settings}.png"
+  echo "Screenshots: $OUT/{alerts,net,settings}.png"
   exit 0
 fi
 
@@ -86,7 +86,7 @@ EOF
 
 # Ad-hoc signature is enough for personal use. Set SIGN_ID="Apple Development: ..." to use your developer cert.
 codesign --force --sign "${SIGN_ID:--}" --identifier "$BUNDLE_ID" "$APP"
-echo "Зібрано: $APP"
+echo "Built: $APP"
 
 if [[ "$MODE" == "--install" ]]; then
   stop_running
@@ -107,5 +107,5 @@ if [[ "$MODE" == "--install" ]]; then
 </plist>
 EOF
   launchctl bootstrap "gui/$(id -u)" "$PLIST"
-  echo "Встановлено в $DEST і запущено (автозапуск при вході увімкнено)."
+  echo "Installed to $DEST and started (launch at login enabled)."
 fi

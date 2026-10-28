@@ -1,168 +1,180 @@
 # BotAlert
 
-Маленький додаток у меню-барі macOS, який попереджає, коли щось краде твої дані: читає SSH-ключі, паролі,
-cookies і крипто-гаманці браузерів, сесію Telegram, ключі AWS/gcloud/kube/docker/gh, або підозріло лізе в мережу.
-Створений після атаки через «тестове завдання»/шкідливий репозиторій (родина BeaverTail / InvisibleFerret):
-node-скрипт тягнув код з Vercel/блокчейну, запускався у фоні й відправляв ключі на чужий IP.
+A tiny macOS menu-bar app that warns you when something is stealing your data: reading SSH keys, browser
+passwords, cookies and crypto wallets, Telegram sessions, AWS/gcloud/kube/docker/gh credentials, or making
+suspicious network connections.
 
-- Працює без root, без Xcode і без Apple Developer акаунта.
-- ~1% CPU, ~20 МБ пам'яті.
-- Нічого нікуди не відправляє: усі дані лишаються на твоєму Mac (журнал — у `~/Library/Logs/BotAlert`).
-  Єдине, що йде в мережу, — звичайні DNS-запити: дізнатися IP блокчейн-вузлів і показати назви сайтів у вкладці «Мережа».
+It was built after a real incident with a malicious "take-home assignment" repository (the BeaverTail /
+InvisibleFerret family, a.k.a. "Contagious Interview"): a node script pulled hidden code from Vercel and a
+blockchain, ran in the background and shipped the victim's keys to a remote IP. BotAlert is meant to make that
+kind of thing loud.
 
-## Вимоги
+- No root, no Xcode, no Apple Developer account needed.
+- ~1% CPU, ~20 MB of memory.
+- Sends nothing anywhere: everything stays on your Mac (the log lives in `~/Library/Logs/BotAlert`). The only
+  network traffic is ordinary DNS lookups, used to learn blockchain-node IPs and to show host names in the
+  Network tab.
 
-- macOS 13 Ventura або новіша (Apple Silicon або Intel).
-- Command Line Tools від Apple (компілятор Swift). Перевірити: `xcrun --find swiftc`. Якщо немає:
+## Requirements
+
+- macOS 13 Ventura or newer (Apple Silicon or Intel).
+- Apple's Command Line Tools (the Swift compiler). Check with `xcrun --find swiftc`. If it's missing:
 
 ```bash
 xcode-select --install
 ```
 
-Xcode не потрібен (якщо він є — теж підійде).
+Xcode is not required (it works too if you have it).
 
-## Встановлення
+## Install
 
-1. Отримай папку проєкту (git clone / zip) і відкрий її в Терміналі.
-2. Запусти:
+1. Get the project (git clone or zip) and open its folder in Terminal.
+2. Run:
 
 ```bash
 ./build.sh --install
 ```
 
-Скрипт збере `BotAlert.app`, скопіює його в `/Applications`, запустить і ввімкне автозапуск при вході в систему.
-Якщо BotAlert хтось вб'є (наприклад, шкідливе ПЗ), macOS автоматично запустить його знову.
-Додавати його вручну в «Об'єкти входу» не потрібно: автозапуск уже налаштовано (у розділі «Дозволити у фоновому
-режимі» BotAlert має бути увімкнений). Зайві копії, запущені вручну, самі передають роботу основній і закриваються.
+The script builds `BotAlert.app`, copies it to `/Applications`, starts it and enables launch at login.
+If something kills BotAlert (malware, for instance), macOS starts it again automatically.
+You don't need to add it to Login Items yourself: launch at login is already set up (BotAlert should be enabled
+under *Allow in the Background*). Extra copies started by hand hand over to the main one and quit.
 
-3. Коли macOS спитає про сповіщення — **дозволь**. Якщо не спитала: Системні параметри → Сповіщення → BotAlert →
-   увімкни «Дозволити сповіщення».
-4. Справа вгорі з'явиться щит. Якщо його не видно — меню-бар переповнений (особливо на MacBook з «чубчиком»):
-   прибери зайві іконки або утримуй ⌘ і перетягни щит лівіше.
+3. When macOS asks about notifications, **allow** them. If it doesn't ask: System Settings → Notifications →
+   BotAlert → turn on *Allow notifications*.
+4. A shield appears in the top-right corner. If you can't see it, the menu bar is too crowded (especially on a
+   MacBook with a notch): remove some icons, or hold ⌘ and drag the shield further left.
 
-Тільки зібрати, без встановлення: `./build.sh` → `build/BotAlert.app` (запуск: `open build/BotAlert.app`).
+Build only, without installing: `./build.sh` → `build/BotAlert.app` (run it with `open build/BotAlert.app`).
 
-## Перевірка, що він працює
+## Check that it works
 
-У `tools/simulate` є два **безпечні** імітатори атаки. Вони підключаються до тестової адреси 203.0.113.x
-(вона нікуди не веде) і лише переглядають список файлів у `~/.ssh` — вміст ключів не читається й нікуди не йде.
+`tools/simulate` has two **harmless** attack imitations. They connect to the test address 203.0.113.x (it goes
+nowhere) and only list file names in `~/.ssh`: no key contents are read or sent.
 
 ```bash
 node tools/simulate/stealer.js
 ```
 
-За ~5 секунд мають прийти сповіщення «підключається на порт 1224», «Хтось прочитав…» і **КРИТИЧНО** «Схоже на
-крадіжку даних», а сам процес буде заморожений (термінал напише `suspended (signal)`). Заверши його кнопкою
-«Вбити» в BotAlert або командою `kill -9 %1`. Повторна перевірка в межах 10 хвилин покаже менше тривог —
-однакові тривоги не повторюються.
+Within ~5 seconds you should get "node is connecting to port 1224", "Something read…" and a **CRITICAL**
+"Looks like data theft" notification, and the process gets frozen (the terminal prints
+`suspended (signal)`). End it with *Kill* in BotAlert or `kill -9 %1`. Repeating the check within 10 minutes
+shows fewer alerts, because identical alerts are not repeated.
 
 ```bash
 python3 tools/simulate/exfil.py
 ```
 
-Очікується **КРИТИЧНО** «Python читає SSH-ключі і має з'єднання з інтернетом» і заморожування
-(так само заверши: «Вбити» або `kill -9 %1`).
+Expected: **CRITICAL** "Python is reading SSH keys while connected to the internet" and a freeze (end it the
+same way: *Kill* or `kill -9 %1`).
 
-## Як користуватись
+## Using it
 
-- **Щит у меню-барі**: звичайний — все спокійно; помаранчевий/червоний з цифрою — нові тривоги.
-- **Тривоги**: що сталося, який процес, звідки запущений, хто батьківський процес, куди підключається.
-  - «Заморозити / Розморозити» — призупинити процес (SIGSTOP) без втрати даних, щоб розібратись.
-  - «Вбити» — завершити процес і всі його дочірні.
-  - «У Finder» — показати файл програми.
-  - «Довіряти» — більше не тривожити про цю програму (список у Налаштуваннях, можна прибрати).
-- **Мережа**: усі поточні інтернет-з'єднання програм, які варто контролювати (червона точка — підозрілий процес).
-- **Налаштування**: автоматичне заморожування при критичній загрозі (увімкнено), сповіщення рівня «Увага»,
-  автозапуск, що саме охороняється, вихід.
+- **Menu-bar shield**: plain means all quiet; orange/red with a number means new alerts.
+- **Alerts** show what happened, which process, where it was started from, its parent process and where it
+  connects.
+  - *Freeze / Unfreeze* pauses the process (SIGSTOP) without losing anything, so you can look into it.
+  - *Kill* ends the process and all its children.
+  - *Show in Finder* reveals the program's file.
+  - *Trust* stops alerting about this program (the list is in Settings, entries can be removed). For node,
+    python and other interpreters it trusts only **that script**, never the whole interpreter: otherwise a
+    malicious repository would become "trusted" too.
+- **Network**: all current internet connections of the programs worth watching (a red dot marks a suspicious
+  process).
+- **Settings**: automatic freeze on a critical threat (on by default), notifications for the *Warning* level,
+  launch at login, what is protected, quit.
 
-Рівні: **КРИТИЧНО** (процес заморожується, звук), **Небезпека** (сповіщення зі звуком), **Увага** (сповіщення),
-**Інфо** (лише в журналі, вмикається в Налаштуваннях).
+Levels: **CRITICAL** (the process is frozen, sound), **Danger** (notification with sound), **Warning**
+(notification), **Info** (log only; can be shown in Settings).
 
-### Якщо прийшла критична тривога
+### If you get a critical alert
 
-1. Не вводь пароль у жодні несподівані вікна.
-2. Вимкни Wi-Fi.
-3. Вбий підозрілий процес кнопкою «Вбити», подивись «У Finder», звідки він.
-4. З **іншого** пристрою зміни паролі, SSH-ключі на GitHub/GitLab, завершуй сесії (Google, Telegram, GitHub),
-   переведи крипту на новий гаманець. Скидання Mac не скасовує вже вкрадені ключі.
+1. Don't type your password into any unexpected window.
+2. Turn off Wi-Fi.
+3. Kill the suspicious process with *Kill*, and use *Show in Finder* to see where it lives.
+4. From **another** device, change passwords and your SSH keys on GitHub/GitLab, sign out other sessions
+   (Google, Telegram, GitHub), and move crypto to a new wallet. Wiping the Mac does not undo keys that were
+   already stolen.
 
-## Що саме відстежується
+## What is watched
 
-| Що | Як |
+| What | How |
 |---|---|
-| Читання чутливих файлів | «Пастки» на часі доступу: macOS (APFS) позначає будь-яке читання, навіть за 1 мс. Якщо прочитала не «своя» програма (браузер, `ssh`, `aws`…) — тривога. Простий перегляд списку файлів у `~/.ssh` без підозрілих процесів лише записується в журнал: так роблять звичайні програми, а самі ключі охороняються окремо. |
-| Хто саме читає | Щосекунди перевіряються відкриті файли процесів. Процес тримає ключі/паролі **і** має з'єднання з інтернетом → КРИТИЧНО, заморожування. |
-| Масове читання | 3+ чутливих місця або 2 категорії за хвилину = поведінка стілера → КРИТИЧНО. Заморожуються лише процеси з доказами (підозріла команда, поганий порт, щойно запущений…), а не всі node підряд. |
-| Підозрілі команди | `curl … \| sh`, обфускований `node -e`, фейкові вікна пароля через `osascript`, `security … Safe Storage`, `dscl -authonly`, запуск з `/tmp` або прихованих папок (`~/.n2`, `~/.npl`…). |
-| Мережа | Нові з'єднання node/python/curl і непідписаних програм: порти бекдорів (1224, 1244, 1245…), блокчейн-вузли (TRON, Aptos, BSC), незвичні порти. |
-| Закріплення в системі | Нові файли в `LaunchAgents` / `LaunchDaemons`, зміни `~/.zshrc`, `~/.zprofile` тощо. |
+| Reads of sensitive files | Access-time "tripwires": APFS marks any read, even a 1 ms one. If it wasn't the file's own program (the browser, `ssh`, `aws`…), you get an alert. A plain listing of the `~/.ssh` folder with no suspicious process around is only logged: regular apps do that, and the keys themselves have their own tripwires. |
+| Who exactly is reading | Open files of processes are checked every second. A process holding keys/passwords **and** connected to the internet → CRITICAL, frozen. |
+| Mass reads | 3+ sensitive locations or 2 categories within a minute is stealer behaviour → CRITICAL. Only processes with concrete evidence against them get frozen (a suspicious command, a backdoor port, a blockchain node), never "every node that happens to run". |
+| Suspicious commands | `curl … \| sh`, obfuscated `node -e`, fake password prompts via `osascript`, `security … Safe Storage`, `dscl -authonly`, running from `/tmp` or hidden folders (`~/.n2`, `~/.npl`…). |
+| Network | New connections of node/python/curl and unsigned programs: backdoor ports (1224, 1244, 1245…), blockchain nodes (TRON, Aptos, BSC), unusual ports. |
+| Persistence | New files in `LaunchAgents` / `LaunchDaemons`, changes to `~/.zshrc`, `~/.zprofile` and friends. |
 
-Охороняються: `~/.ssh`; Chrome, Brave, Edge, Arc, Vivaldi, Opera, Chromium, Yandex (паролі, cookies, картки,
-ключ шифрування, розширення-гаманці MetaMask/Phantom/Coinbase/TronLink/Rabby/OKX…); Firefox; Telegram Desktop;
+Protected: `~/.ssh`; Chrome, Brave, Edge, Arc, Vivaldi, Opera, Chromium, Yandex (passwords, cookies, cards, the
+encryption key, wallet extensions MetaMask/Phantom/Coinbase/TronLink/Rabby/OKX…); Firefox; Telegram Desktop;
 Exodus, Electrum, Atomic, Ledger Live, Bitcoin Core, Solana CLI; `~/.aws`, gcloud, `~/.kube/config`,
-`~/.docker/config.json`, `~/.git-credentials`, `gh`; файли Keychain.
+`~/.docker/config.json`, `~/.git-credentials`, `gh`; Keychain files.
 
-## Оновлення і видалення
+## Update and uninstall
 
-Оновити (після змін у коді або нової версії від друга) — та сама команда, налаштування збережуться:
+Update (after changing the code or pulling a new version) with the same command; settings are kept:
 
 ```bash
 ./build.sh --install
 ```
 
-Видалити:
+Uninstall:
 
 ```bash
 ./build.sh --uninstall
 ```
 
-Журнал і налаштування лишаються; повністю стерти: `rm -rf ~/Library/Logs/BotAlert && defaults delete local.botalert.monitor`.
+The log and settings stay; to wipe them completely:
+`rm -rf ~/Library/Logs/BotAlert && defaults delete local.botalert.monitor`.
 
-## Як поділитися з кимось
+## Sharing it
 
-Передавай **папку з кодом** (git або zip без папки `build`), а не готовий `BotAlert.app`, і нехай людина збере
-його сама командою `./build.sh --install`. Запакувати:
+Share the **source** (git or a zip without the `build` folder), not a prebuilt `BotAlert.app`, and let people
+build it themselves with `./build.sh --install`. That way they can read the code before running it (you know
+how third-party repositories can end 🙂), and macOS won't block the app. To make a zip:
 
 ```bash
 cd .. && zip -r BotAlert.zip bot_alert -x 'bot_alert/build/*' 'bot_alert/.git/*' '*.DS_Store'
 ```
 
-Після розпакування: `cd bot_alert && ./build.sh --install` (якщо zip скачали з інтернету і скрипт не запускається —
-`chmod +x build.sh`). Так вона може переглянути код перед запуском (ти ж знаєш, чим закінчуються
-чужі репозиторії 🙂), і macOS не блокуватиме програму.
+After unzipping: `cd bot_alert && ./build.sh --install` (if the zip was downloaded and the script won't run,
+`chmod +x build.sh`).
 
-Якщо все ж передаєш зібраний `.app`: він підписаний лише локально, тому macOS скаже, що «програму неможливо
-відкрити». Отримувач може зняти карантин (тільки якщо довіряє тобі):
+If you do pass on a built `.app`: it is only signed locally, so macOS will say it "can't be opened". The
+recipient can remove the quarantine flag (only if they trust you):
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/BotAlert.app
 ```
 
-Можна підписати своїм Apple Developer сертифікатом: `SIGN_ID="Apple Development: Ім'я (TEAMID)" ./build.sh`.
+You can also sign it with your own Apple Developer certificate:
+`SIGN_ID="Apple Development: Your Name (TEAMID)" ./build.sh`.
 
-## Якщо щось не так
+## Troubleshooting
 
-| Проблема | Рішення |
+| Problem | Fix |
 |---|---|
-| `Не знайдено swiftc` | `xcode-select --install` |
-| `Не знайдено macOS SDK, сумісний з компілятором` | Оновити Command Line Tools (Системні параметри → Оновлення ПЗ) або перевстановити: `sudo rm -rf /Library/Developer/CommandLineTools && xcode-select --install` |
-| Немає сповіщень | Системні параметри → Сповіщення → BotAlert → дозволити; вимкнути «Зосередження» |
-| Не видно іконки | Меню-бар переповнений — прибери інші іконки; перевір `pgrep -x BotAlert` |
-| Тривога про програму, якій довіряєш | Кнопка «Довіряти». Для node/python/… вона довіряє лише цьому скрипту, не всьому node — інакше шкідливий репозиторій теж став би «довіреним» |
-| «Хтось прочитав SSH-ключ», а це був ти | Це нормально, рівень «Увага» — просто ігноруй |
-| Хочеш знати, хто саме читає файл | `python3 tools/who_reads.py ~/.ssh` — показує, що запускалось у момент кожного читання |
-| Заморожено потрібний процес | «Розморозити» в тривозі, за потреби «Довіряти» |
+| `swiftc not found` | `xcode-select --install` |
+| `No macOS SDK compatible with the compiler` | Update the Command Line Tools (System Settings → Software Update) or reinstall them: `sudo rm -rf /Library/Developer/CommandLineTools && xcode-select --install` |
+| No notifications | System Settings → Notifications → BotAlert → allow; turn off Focus |
+| No menu-bar icon | The menu bar is full: remove other icons; check `pgrep -x BotAlert` |
+| Alert about a program you trust | *Trust*. For node/python/… it trusts only that script, not all of node |
+| "Something read an SSH key" and it was you | That's fine, it's a *Warning*: just ignore it |
+| Want to know exactly who reads a file | `python3 tools/who_reads.py ~/.ssh` shows what was starting at each read |
+| A process you need was frozen | *Unfreeze* in the alert, then *Trust* if needed |
 
-## Обмеження
+## Limitations
 
-- Без root не видно процесів інших користувачів і системних процесів.
-- Мережа видна як IP:порт, без назв доменів.
-- Якщо файл прочитали за мілісекунду і процес одразу завершився, саме читання буде виявлено, але винуватця видно
-  лише за непрямими ознаками.
-- Це додатковий захист, а не антивірус: не запускай невідомі репозиторії/«тестові завдання» поза віртуальною
-  машиною чи контейнером.
+- Without root it can't see processes of other users or of the system.
+- Network activity is seen as IP:port, without domain names.
+- If a file was read in a millisecond and the process exited right away, the read itself is detected, but the
+  culprit can only be inferred indirectly.
+- It's an extra layer, not an antivirus: don't run unknown repositories or "take-home assignments" outside a VM
+  or container.
 
-## Для розробників
+## For developers
 
-Архітектура, рішення і як тестувати зміни — у [CLAUDE.md](CLAUDE.md). Рендер інтерфейсу в PNG без запуску:
-`./build.sh --snapshot /tmp/shots`.
+Architecture, design decisions and how to test changes are in [CLAUDE.md](CLAUDE.md). Render the UI to PNGs
+without running the app: `./build.sh --snapshot /tmp/shots`.

@@ -85,7 +85,7 @@ final class AlertStore: NSObject, ObservableObject, UNUserNotificationCenterDele
     private func log(_ ev: AlertEvent) {
         let df = ISO8601DateFormatter()
         let line = "[\(df.string(from: Date()))] [\(ev.severity.label)] \(ev.title)\n\(ev.detail)\n"
-            + (ev.frozen.isEmpty ? "" : "Заморожено pid: \(ev.frozen)\n") + "----\n"
+            + (ev.frozen.isEmpty ? "" : "Frozen pids: \(ev.frozen)\n") + "----\n"
         if let h = try? FileHandle(forWritingTo: logURL) {
             h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); try? h.close()
         } else {
@@ -97,7 +97,7 @@ final class AlertStore: NSObject, ObservableObject, UNUserNotificationCenterDele
         guard Bundle.main.bundleIdentifier != nil else { return }
         let c = UNMutableNotificationContent()
         c.title = (ev.severity == .critical ? "🚨 " : "⚠️ ") + ev.title
-        var body = ev.frozen.isEmpty ? "" : "Процес заморожено. "
+        var body = ev.frozen.isEmpty ? "" : "Process frozen. "
         body += ev.detail.split(separator: "\n").prefix(3).joined(separator: " ")
         c.body = String(body.prefix(240))
         if ev.severity >= .high { c.sound = .default }

@@ -80,9 +80,9 @@ enum Proc {
         var key: String { "\(ip):\(port)" }
         var stateName: String {
             switch state {
-            case 2: return "з'єднується"
-            case 4: return "активне"
-            default: return "закривається"
+            case 2: return "connecting"
+            case 4: return "established"
+            default: return "closing"
             }
         }
     }
@@ -139,8 +139,8 @@ struct SignInfo {
 
     var label: String {
         if isApple { return "Apple" }
-        if let teamID { return "підписано (\(teamID))" }
-        return "БЕЗ ПІДПИСУ"
+        if let teamID { return "signed (\(teamID))" }
+        return "UNSIGNED"
     }
 }
 

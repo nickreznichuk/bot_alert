@@ -1,11 +1,8 @@
 import Foundation
 
-/// Ukrainian plural: plural(1, "пастка", "пастки", "пасток").
-func plural(_ n: Int, _ one: String, _ few: String, _ many: String) -> String {
-    let m10 = n % 10, m100 = n % 100
-    if m10 == 1 && m100 != 11 { return "\(n) \(one)" }
-    if (2...4).contains(m10) && !(12...14).contains(m100) { return "\(n) \(few)" }
-    return "\(n) \(many)"
+/// plural(1, "trap", "traps") -> "1 trap".
+func plural(_ n: Int, _ one: String, _ many: String) -> String {
+    n == 1 ? "\(n) \(one)" : "\(n) \(many)"
 }
 
 enum Severity: Int, Codable, Comparable {
@@ -15,21 +12,21 @@ enum Severity: Int, Codable, Comparable {
 
     var label: String {
         switch self {
-        case .info: return "Інфо"
-        case .medium: return "Увага"
-        case .high: return "Небезпека"
-        case .critical: return "КРИТИЧНО"
+        case .info: return "Info"
+        case .medium: return "Warning"
+        case .high: return "Danger"
+        case .critical: return "CRITICAL"
         }
     }
 }
 
 enum Category: String, CaseIterable {
-    case ssh = "SSH-ключі"
-    case browser = "Браузери (паролі, cookies, гаманці)"
-    case wallet = "Крипто-гаманці"
-    case messenger = "Месенджери"
+    case ssh = "SSH keys"
+    case browser = "Browsers (passwords, cookies, wallets)"
+    case wallet = "Crypto wallets"
+    case messenger = "Messengers"
     case keychain = "Keychain"
-    case devcreds = "Ключі розробника (AWS, gcloud, kube, docker, gh)"
+    case devcreds = "Developer credentials (AWS, gcloud, kube, docker, gh)"
 }
 
 /// Which processes are expected to touch a target.
@@ -186,14 +183,14 @@ enum Rules {
         t.append(Target(id: "ssh", title: "~/.ssh", category: .ssh, owners: sshOwners, atimeWatch: true,
                         prefixes: [home + "/.ssh/"]) {
             let dir = home + "/.ssh"
-            var specs = [WatchSpec(path: dir, label: "папку ~/.ssh (перегляд списку ключів)", listingOnly: true)]
+            var specs = [WatchSpec(path: dir, label: "the ~/.ssh folder (list of keys)", listingOnly: true)]
             let skip: Set<String> = ["known_hosts", "known_hosts.old", "config", "authorized_keys", "environment", ".DS_Store"]
             for p in subdirs(dir) {
                 let name = (p as NSString).lastPathComponent
                 var isDir: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: p, isDirectory: &isDir), !isDir.boolValue else { continue }
                 if name.hasSuffix(".pub") || skip.contains(name) { continue }
-                specs.append(WatchSpec(path: p, label: "SSH-ключ ~/.ssh/\(name)"))
+                specs.append(WatchSpec(path: p, label: "SSH key ~/.ssh/\(name)"))
             }
             return specs
         })
@@ -203,20 +200,20 @@ enum Rules {
             t.append(Target(id: "browser:" + b.base, title: b.title, category: .browser,
                             owners: Owners(pathContains: b.owners), atimeWatch: true, prefixes: [base + "/"],
                             ownerGraceOnly: true) {
-                var specs = [WatchSpec(path: base + "/Local State", label: "\(b.title): ключ шифрування паролів (Local State)")]
+                var specs = [WatchSpec(path: base + "/Local State", label: "\(b.title): password encryption key (Local State)")]
                 for profile in subdirs(base) where FileManager.default.fileExists(atPath: profile + "/Preferences") {
                     let pn = (profile as NSString).lastPathComponent
                     specs += [
-                        WatchSpec(path: profile + "/Login Data", label: "\(b.title) [\(pn)]: збережені паролі"),
-                        WatchSpec(path: profile + "/Cookies", label: "\(b.title) [\(pn)]: cookies (сесії)"),
-                        WatchSpec(path: profile + "/Network/Cookies", label: "\(b.title) [\(pn)]: cookies (сесії)"),
-                        WatchSpec(path: profile + "/Web Data", label: "\(b.title) [\(pn)]: картки й автозаповнення"),
-                        WatchSpec(path: profile + "/Local Extension Settings", label: "\(b.title) [\(pn)]: список розширень",
+                        WatchSpec(path: profile + "/Login Data", label: "\(b.title) [\(pn)]: saved passwords"),
+                        WatchSpec(path: profile + "/Cookies", label: "\(b.title) [\(pn)]: cookies (sessions)"),
+                        WatchSpec(path: profile + "/Network/Cookies", label: "\(b.title) [\(pn)]: cookies (sessions)"),
+                        WatchSpec(path: profile + "/Web Data", label: "\(b.title) [\(pn)]: cards and autofill"),
+                        WatchSpec(path: profile + "/Local Extension Settings", label: "\(b.title) [\(pn)]: list of extensions",
                                   listingOnly: true),
                     ]
                     for (id, wallet) in walletExtensions {
                         specs.append(WatchSpec(path: profile + "/Local Extension Settings/" + id,
-                                               label: "\(b.title) [\(pn)]: гаманець \(wallet)"))
+                                               label: "\(b.title) [\(pn)]: \(wallet) wallet"))
                     }
                 }
                 return existing(specs)
@@ -230,8 +227,8 @@ enum Rules {
             for p in subdirs(ff) {
                 let pn = (p as NSString).lastPathComponent
                 specs += [
-                    WatchSpec(path: p + "/logins.json", label: "Firefox [\(pn)]: збережені паролі"),
-                    WatchSpec(path: p + "/key4.db", label: "Firefox [\(pn)]: ключ паролів"),
+                    WatchSpec(path: p + "/logins.json", label: "Firefox [\(pn)]: saved passwords"),
+                    WatchSpec(path: p + "/key4.db", label: "Firefox [\(pn)]: password key"),
                     WatchSpec(path: p + "/cookies.sqlite", label: "Firefox [\(pn)]: cookies"),
                 ]
             }
@@ -246,8 +243,8 @@ enum Rules {
         t.append(Target(id: "telegram", title: "Telegram Desktop", category: .messenger,
                         owners: Owners(pathContains: ["/Telegram.app/", "Telegram Desktop"]), atimeWatch: true,
                         prefixes: [tg + "/"]) {
-            existing([WatchSpec(path: tg, label: "Telegram: сесія (tdata)"),
-                      WatchSpec(path: tg + "/key_datas", label: "Telegram: ключ сесії")])
+            existing([WatchSpec(path: tg, label: "Telegram: session (tdata)"),
+                      WatchSpec(path: tg + "/key_datas", label: "Telegram: session key")])
         })
 
         let wallets: [(String, String, [String], [String])] = [
@@ -262,7 +259,7 @@ enum Rules {
         for w in wallets {
             t.append(Target(id: "wallet:" + w.0, title: (w.1 as NSString).lastPathComponent, category: .wallet,
                             owners: Owners(names: Set(w.3), pathContains: w.2), atimeWatch: true, prefixes: [w.1]) {
-                existing([WatchSpec(path: w.1, label: "Гаманець: " + w.1.replacingOccurrences(of: home, with: "~"))])
+                existing([WatchSpec(path: w.1, label: "Wallet: " + w.1.replacingOccurrences(of: home, with: "~"))])
             })
         }
 
@@ -284,7 +281,7 @@ enum Rules {
         for d in dev {
             t.append(Target(id: "dev:" + d.0, title: d.1.replacingOccurrences(of: home, with: "~"), category: .devcreds,
                             owners: d.2, atimeWatch: true, prefixes: [d.1]) {
-                existing([WatchSpec(path: d.1, label: "Ключі: " + d.1.replacingOccurrences(of: home, with: "~"))])
+                existing([WatchSpec(path: d.1, label: "Credentials: " + d.1.replacingOccurrences(of: home, with: "~"))])
             })
         }
         return t
@@ -297,41 +294,42 @@ enum Rules {
 
         if name == "security" {
             if lc.contains("dump-keychain") || lc.contains("safe storage") {
-                return (.critical, "Спроба витягти ключ паролів браузера з Keychain",
-                        "Команда `security` запитує ключ шифрування паролів браузера або вивантажує весь Keychain. Так роблять стілери.")
+                return (.critical, "Attempt to pull the browser password key from Keychain",
+                        "`security` is asking for the browser's password encryption key or dumping the whole Keychain. This is what stealers do.")
             }
             if lc.contains("find-generic-password") || lc.contains("find-internet-password") {
-                return (.info, "Програма читає пароль з Keychain", "Звичайно для деяких CLI (наприклад Claude Code), але перевір батьківський процес.")
+                return (.info, "A program reads a password from Keychain", "Normal for some CLIs (e.g. Claude Code), but check the parent process.")
             }
         }
+        // "пароль" catches prompts localized for Ukrainian/Russian victims.
         if name == "osascript" && (lc.contains("hidden answer") || lc.contains("password") || lc.contains("пароль")) {
-            return (.critical, "Фейкове вікно запиту пароля",
-                    "osascript показує діалог з прихованим вводом. Стілери (AMOS) так виманюють пароль від Mac. НЕ ВВОДЬ пароль.")
+            return (.critical, "Fake password prompt",
+                    "osascript is showing a dialog with hidden input. Stealers (AMOS) use this to phish your Mac password. DO NOT enter it.")
         }
         if name == "dscl" && lc.contains("authonly") {
-            return (.critical, "Перевірка пароля користувача через dscl", "Стілери так перевіряють, чи правильний пароль ти ввів у фейкове вікно.")
+            return (.critical, "User password check via dscl", "Stealers use this to verify the password you typed into a fake prompt.")
         }
         if name == "sqlite3" && (lc.contains("login data") || lc.contains("cookies") || lc.contains("web data") || lc.contains("logins.json")) {
-            return (.high, "sqlite3 читає базу паролів/cookies браузера", cmd)
+            return (.high, "sqlite3 is reading the browser's password/cookie database", cmd)
         }
         if ["sh", "bash", "zsh", "dash"].contains(name), args.count >= 3, args[1] == "-c" {
             let c = args[2].lowercased()
             let fetch = c.contains("curl") || c.contains("wget")
             let pipe = ["| sh", "|sh", "| bash", "|bash", "| zsh", "|zsh", "| python", "|python", "| node", "|node"].contains { c.contains($0) }
             if fetch && pipe {
-                return (.high, "Завантаження і запуск скрипта з інтернету", "Команда виду `curl … | sh`:\n" + String(args[2].prefix(400)))
+                return (.high, "Downloading and running a script from the internet", "A `curl … | sh` style command:\n" + String(args[2].prefix(400)))
             }
         }
         for dir in iocHiddenDirs where cmd.contains(home + "/" + dir + "/") || path.contains(home + "/" + dir + "/") {
-            return (.critical, "Відомий шкідливий каталог \(dir)", "Каталог ~/\(dir) використовують бекдори InvisibleFerret/BeaverTail.")
+            return (.critical, "Known malware folder \(dir)", "The ~/\(dir) folder is used by the InvisibleFerret/BeaverTail backdoors.")
         }
         if isInterpreter(name), let flag = args.dropFirst().first(where: { ["-e", "--eval", "-p", "--print", "-c"].contains($0) }),
            let idx = args.firstIndex(of: flag), idx + 1 < args.count {
             let code = args[idx + 1]
             let tokens = ["eval(", "function(", "atob(", "buffer.from(", "base64", "child_process", "fromcharcode", "\\x", "exec(", "marshal", "zlib"]
             if code.count > 400 || tokens.contains(where: { code.lowercased().contains($0) }) {
-                return (.medium, "\(name) виконує вбудований (можливо обфускований) код",
-                        "Інлайн-код \(code.count) символів:\n" + String(code.prefix(300)))
+                return (.medium, "\(name) is running inline (possibly obfuscated) code",
+                        "Inline code, \(code.count) characters:\n" + String(code.prefix(300)))
             }
         }
         // Only the script itself counts: `node tool.mjs /tmp/request.json` is not "running a script from /tmp".
@@ -341,16 +339,16 @@ enum Rules {
         for p in candidates where p.hasPrefix(home + "/.") {
             let comp = String(p.dropFirst(home.count + 1).split(separator: "/").first ?? "")
             if !knownHiddenDirs.contains(comp) {
-                return (isInterpreter(name) ? .high : .medium, "Запуск з прихованої папки ~/\(comp)",
-                        "Шкідливі програми часто ховаються у ~/.щось. Файл: \(p)")
+                return (isInterpreter(name) ? .high : .medium, "Running from the hidden folder ~/\(comp)",
+                        "Malware often hides in ~/.something. File: \(p)")
             }
         }
         let tmpPrefixes = ["/tmp/", "/private/tmp/", "/private/var/folders/", "/var/folders/", "/Users/Shared/"]
         if sign.isAdhocOrUnsigned, tmpPrefixes.contains(where: { path.hasPrefix($0) }) {
-            return (.medium, "Непідписана програма запущена з тимчасової папки", path)
+            return (.medium, "Unsigned program started from a temporary folder", path)
         }
         if let script, tmpPrefixes.contains(where: { script.hasPrefix($0) }) {
-            return (.medium, "\(name) запускає скрипт з тимчасової папки", script)
+            return (.medium, "\(name) is running a script from a temporary folder", script)
         }
         return nil
     }

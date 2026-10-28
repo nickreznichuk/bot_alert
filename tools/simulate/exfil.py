@@ -1,6 +1,6 @@
 # Harmless imitation of "read secrets while connected to the internet".
 # Connects to 203.0.113.7:443 (TEST-NET-3, unroutable) and holds ~/.ssh open as a directory
-# (no key is read). Expected: CRITICAL "Python читає SSH-ключі і має з'єднання з інтернетом",
+# (no key is read). Expected: CRITICAL "Python is reading SSH keys while connected to the internet",
 # process frozen. Kill it afterwards: kill -9 <pid>.
 import os, socket, time
 

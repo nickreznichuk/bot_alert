@@ -2,8 +2,9 @@
 
 macOS menu-bar app (SwiftUI `MenuBarExtra`) that warns about info-stealer behaviour: reads of SSH keys /
 browser passwords, cookies and wallets / dev credentials, suspicious command lines, odd network connections
-from interpreters, new persistence. Personal tool, not distributed. Runs as the user, no root, no entitlements.
-UI strings and user-facing docs are **Ukrainian**; code comments are English.
+from interpreters, new persistence. Open source; users build it from source (no binary releases). Runs as the
+user, no root, no entitlements. Everything is in **English**: UI strings, alert texts, docs, code comments.
+The only non-English literal is the `"пароль"` detection keyword in `Rules.execVerdict` (localized fake prompts).
 
 ## Build & run
 
@@ -14,8 +15,8 @@ UI strings and user-facing docs are **Ukrainian**; code comments are English.
 ./build.sh --snapshot /tmp/x  # render UI to PNGs (alerts/net/settings) for visual checks
 ```
 
-- Build is plain `swiftc` on purpose. **Do not add Package.swift / SwiftPM**: SwiftPM in the installed
-  Command Line Tools crashes (dyld symbol error), and CLT ship an SDK newer than the compiler, so
+- Build is plain `swiftc` on purpose. **Do not add Package.swift / SwiftPM**: SwiftPM in some Command Line
+  Tools releases crashes (dyld symbol error), and CLT can ship an SDK newer than the compiler, so
   `build.sh` probes SDKs and picks the newest one that typechecks `import SwiftUI`. Override with `SDK=...`.
 - Deployment target macOS 13 (MenuBarExtra). No Xcode needed.
 - Alert log: `~/Library/Logs/BotAlert/alerts.log` — the easiest way to verify detections headlessly.
@@ -30,7 +31,8 @@ UI strings and user-facing docs are **Ukrainian**; code comments are English.
 | `Sources/BotAlert/Monitor.swift` | Engine on a serial queue, 0.5 s timer: process diff → exec rules; atime tripwires; fd/socket scan; suspect scoring; sweep detection; freeze (SIGSTOP); LaunchAgents/rc-file watch |
 | `Sources/BotAlert/AlertStore.swift` | Main-thread `ObservableObject`: dedupe (10 min per key), notifications (UNUserNotificationCenter), log file, actions (freeze/resume/kill/trust), LaunchAgent toggle, reverse DNS for the Network tab |
 | `Sources/BotAlert/Views.swift` | Menu-bar label/icon, tabs: alerts, network, settings |
-| `Sources/BotAlert/BotAlertApp.swift` | `@main`, single-instance guard, accessory activation policy, window opened from notification click |
+| `Sources/BotAlert/BotAlertApp.swift` | `@main` (calls `SingleInstance.enforce()` in `App.init`), accessory activation policy, window opened from notification click |
+| `Sources/BotAlert/SingleInstance.swift` | One-copy guard / handover to the launchd job (separate file so the snapshot build, which skips `BotAlertApp.swift`, still links) |
 | `tools/simulate/*` | Harmless attack simulations (TEST-NET IPs, only list dirs / hold a dir fd, never read secrets) |
 | `tools/snapshot/main.swift` | Offscreen UI renderer used by `--snapshot` |
 | `tools/who_reads.py` | Diagnoses false positives: polls a path's atime at 20 Hz and prints young processes + holders on each read |
@@ -48,18 +50,18 @@ UI strings and user-facing docs are **Ukrainian**; code comments are English.
   - Browsers keep their DBs open and reading via open fds does not bump atime, so browser targets use
     `ownerGraceOnly`: only the main (non-"Helper") process starting <60 s ago or quitting <20 s ago excuses a read.
     Keychain has no atime watch (securityd touches it constantly) — fd-open only.
-- **Listing-only dirs** (`WatchSpec.listingOnly`: `~/.ssh` itself, Chromium `Local Extension Settings`): some
-  long-running app on this Mac lists `~/.ssh` exactly every 60 s, which produced a "someone read ~/.ssh" alert
-  every 10 min. A listing reveals no secret (keys / wallet dirs have their own tripwires), so without a
+- **Listing-only dirs** (`WatchSpec.listingOnly`: `~/.ssh` itself, Chromium `Local Extension Settings`): on the
+  author's Mac some long-running app lists `~/.ssh` exactly every 60 s, which produced a "something read
+  ~/.ssh" alert every 10 min. A listing reveals no secret (keys / wallet dirs have their own tripwires), so without a
   score ≥3 suspect it is only an `.info` event and does not count toward the sweep. Use
   `python3 tools/who_reads.py PATH` to see what was running at each read when chasing such noise.
 - **Trust is per script for interpreters** (`Rules.trustKey`: `path + " " + first non-flag arg`). Trusting the
-  whole `node` binary (an early version allowed it, the user clicked it) would blind BotAlert to exactly the
+  whole `node` binary (an early version allowed it, and it got clicked) would blind BotAlert to exactly the
   malicious-repo attack. Old bare-interpreter entries stay in the list but are ignored and flagged in Settings.
 - **Attribution.** A read with no owner triggers an immediate fd scan; if nobody holds the file, live processes
   are scored (`currentSuspects`): suspicious exec +sev+1, net flag (bad port / RPC / odd port) +3, age <2 min +2
   (<15 min +1), unsigned non-interpreter +1, has connections +1. Score ≥3 = suspect (weak touch), **≥4 = may be
-  frozen**. Never freeze "every node": an early version froze the user's `next dev` server. Without concrete
+  frozen**. Never freeze "every node": an early version froze an unrelated `next dev` server. Without concrete
   evidence (exec flag above info, or a net flag) the score is capped at 2: "fresh + unsigned" or "fresh + has
   connections" is just timing — a new `pnpm dev` or Telegram script coinciding with the benign 60 s `~/.ssh`
   listing produced red alerts before this cap.
@@ -69,7 +71,7 @@ UI strings and user-facing docs are **Ukrainian**; code comments are English.
   get full resolution each scan, but if they hold ≥300 fds (dev-server watchers) only every 5 s; signed apps
   only resolve fds new since last scan (`fdPaths` cache) plus a full pass every 30 s. Re-measure with
   `top -l 6 -s 3 -pid $(pgrep -x BotAlert) -stats pid,cpu,mem` after changing the scan loop.
-- **Single instance** (`SingleInstance` in `BotAlertApp.swift`, runs in `App.init` before the store exists):
+- **Single instance** (`SingleInstance.swift`, called from `App.init` before the store exists):
   the launchd job (`XPC_SERVICE_NAME == local.botalert.agent`) always wins and force-terminates other copies;
   any other launch (Login Items, Finder, `open -n`) does `launchctl kickstart` (bootstrap if needed) and exits,
   so a manual open after "Quit" still ends up launchd-managed. Without the plist it falls back to "exit if

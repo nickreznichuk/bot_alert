@@ -196,10 +196,10 @@ final class Monitor {
 
     private func describe(_ rec: ProcRec) -> String {
         var lines = [
-            "Процес: \(rec.display)",
-            "Файл: \(rec.path)",
-            "Підпис: \(rec.sign.label)",
-            "Команда: \(String(rec.args.joined(separator: " ").prefix(600)))",
+            "Process: \(rec.display)",
+            "File: \(rec.path)",
+            "Signature: \(rec.sign.label)",
+            "Command: \(String(rec.args.joined(separator: " ").prefix(600)))",
         ]
         var chain: [String] = []
         var p = rec.ppid
@@ -208,11 +208,11 @@ final class Monitor {
             guardCount += 1
             if let parent = procs[p] { chain.append(parent.display); p = parent.ppid } else { break }
         }
-        if !chain.isEmpty { lines.append("Батьківські процеси: " + chain.joined(separator: " ← ")) }
+        if !chain.isEmpty { lines.append("Parent processes: " + chain.joined(separator: " ← ")) }
         if !rec.lastConns.isEmpty {
-            lines.append("З'єднання: " + rec.lastConns.map { $0.key }.joined(separator: ", "))
+            lines.append("Connections: " + rec.lastConns.map { $0.key }.joined(separator: ", "))
         }
-        if !rec.rpcHits.isEmpty { lines.append("Звертався до блокчейн-вузлів: " + rec.rpcHits.sorted().joined(separator: ", ")) }
+        if !rec.rpcHits.isEmpty { lines.append("Contacted blockchain nodes: " + rec.rpcHits.sorted().joined(separator: ", ")) }
         return lines.joined(separator: "\n")
     }
 
@@ -299,14 +299,14 @@ final class Monitor {
         if !rec.lastConns.isEmpty {
             guard !rec.criticalSent else { return }
             rec.criticalSent = true
-            var ev = AlertEvent(severity: .critical, title: "\(rec.name) читає \(t.category.rawValue) і має з'єднання з інтернетом",
-                                detail: "Відкрито: \(path)\nЦе типова поведінка стілера: читає ключі/паролі та одразу відправляє їх.\n\n" + describe(rec),
+            var ev = AlertEvent(severity: .critical, title: "\(rec.name) is reading \(t.category.rawValue) while connected to the internet",
+                                detail: "Opened: \(path)\nThis is typical stealer behaviour: read keys/passwords and send them right away.\n\n" + describe(rec),
                                 pid: rec.pid, processName: rec.name, processPath: rec.path, dedupeKey: "exfil:\(rec.pid)")
             ev.frozen = freeze(rec.pid)
             emit(ev)
         } else if first {
-            emit(AlertEvent(severity: .high, title: "\(rec.name) відкрив \(label)",
-                                detail: "Цей процес не має права читати ці дані.\nВідкрито: \(path)\n\n" + describe(rec),
+            emit(AlertEvent(severity: .high, title: "\(rec.name) opened \(label)",
+                                detail: "This process has no business reading this data.\nOpened: \(path)\n\n" + describe(rec),
                                 pid: rec.pid, processName: rec.name, processPath: rec.path, dedupeKey: "touch:\(rec.pid):\(ti)"))
         }
     }
@@ -317,41 +317,41 @@ final class Monitor {
         if let st = rec.strongTouch, now.timeIntervalSince(st.at) < 600 {
             guard !rec.criticalSent else { return }
             rec.criticalSent = true
-            var ev = AlertEvent(severity: .critical, title: "Можливий злив даних: \(rec.name) → \(c.key)",
-                                detail: "Процес щойно читав «\(st.label)», а тепер підключається до \(c.key).\n\n" + describe(rec),
+            var ev = AlertEvent(severity: .critical, title: "Possible data exfiltration: \(rec.name) → \(c.key)",
+                                detail: "The process just read \"\(st.label)\" and is now connecting to \(c.key).\n\n" + describe(rec),
                                 pid: rec.pid, processName: rec.name, processPath: rec.path, dedupeKey: "exfil:\(rec.pid)")
             ev.frozen = freeze(rec.pid)
             emit(ev)
             return
         }
         if let wt = rec.weakTouch, now.timeIntervalSince(wt.at) < 600 {
-            emit(AlertEvent(severity: .high, title: "Підозрюваний процес \(rec.name) підключився до \(c.key)",
-                                detail: "Під час його роботи хтось прочитав «\(wt.label)».\n\n" + describe(rec),
+            emit(AlertEvent(severity: .high, title: "Suspected process \(rec.name) connected to \(c.key)",
+                                detail: "While it was running, something read \"\(wt.label)\".\n\n" + describe(rec),
                                 pid: rec.pid, processName: rec.name, processPath: rec.path, dedupeKey: "weaknet:\(rec.pid):\(c.key)"))
             return
         }
         guard rec.interpreter || rec.sign.isAdhocOrUnsigned else { return }
         if Rules.badPorts.contains(c.port) {
-            rec.netFlag = "порт \(c.port)"
-            emit(AlertEvent(severity: .high, title: "\(rec.name) підключається на порт \(c.port)",
-                                detail: "Порт \(c.port) використовують бекдори BeaverTail/InvisibleFerret (фейкові тестові завдання й репозиторії).\nАдреса: \(c.key)\n\n" + describe(rec),
+            rec.netFlag = "port \(c.port)"
+            emit(AlertEvent(severity: .high, title: "\(rec.name) is connecting to port \(c.port)",
+                                detail: "Port \(c.port) is used by the BeaverTail/InvisibleFerret backdoors (fake job-interview tasks and repositories).\nAddress: \(c.key)\n\n" + describe(rec),
                                 pid: rec.pid, processName: rec.name, processPath: rec.path, dedupeKey: "badport:\(rec.pid):\(c.port)"))
         } else if let flag = rec.execFlag, flag >= .medium {
-            emit(AlertEvent(severity: .high, title: "Підозрілий процес \(rec.name) підключився до \(c.key)",
+            emit(AlertEvent(severity: .high, title: "Suspicious process \(rec.name) connected to \(c.key)",
                                 detail: describe(rec), pid: rec.pid, processName: rec.name, processPath: rec.path,
                                 dedupeKey: "flagnet:\(rec.pid)"))
         } else if rec.interpreter, let host = rpcIPs[c.ip] {
-            rec.netFlag = "блокчейн \(host)"
-            emit(AlertEvent(severity: .medium, title: "\(rec.name) звертається до блокчейн-вузла \(host)",
-                                detail: "Так шкідливі репозиторії завантажують прихований код (його зберігають у транзакціях). Якщо ти не працюєш з web3 — це дуже підозріло.\nАдреса: \(c.key)\n\n" + describe(rec),
+            rec.netFlag = "blockchain \(host)"
+            emit(AlertEvent(severity: .medium, title: "\(rec.name) is talking to blockchain node \(host)",
+                                detail: "Malicious repositories load hidden code this way (it is stored in transactions). If you don't work with web3, this is very suspicious.\nAddress: \(c.key)\n\n" + describe(rec),
                                 pid: rec.pid, processName: rec.name, processPath: rec.path, dedupeKey: "rpc:\(rec.pid)"))
         } else if rec.interpreter, !Rules.commonPorts.contains(c.port) {
             let devPorts: Set<UInt16> = [3306, 5432, 6543, 6379, 27017, 9200, 5672, 9092, 11211, 1433, 8080, 3000]
             let isDev = devPorts.contains(c.port)
-            if !isDev { rec.netFlag = rec.netFlag ?? "порт \(c.port)" }
+            if !isDev { rec.netFlag = rec.netFlag ?? "port \(c.port)" }
             emit(AlertEvent(severity: isDev ? .info : .medium,
-                                title: "\(rec.name) підключається на незвичний порт \(c.port)",
-                                detail: "Адреса: \(c.key)\n\n" + describe(rec), pid: rec.pid, processName: rec.name,
+                                title: "\(rec.name) is connecting to an unusual port \(c.port)",
+                                detail: "Address: \(c.key)\n\n" + describe(rec), pid: rec.pid, processName: rec.name,
                                 processPath: rec.path, dedupeKey: "port:\(rec.pid):\(c.port)"))
         }
     }
@@ -433,19 +433,19 @@ final class Monitor {
         let strong = suspects.first { $0.score >= 3 }
         if item.spec.listingOnly && strong == nil {
             // Some long-running app lists the folder on a timer; the secrets inside have their own tripwires.
-            emit(AlertEvent(severity: .info, title: "Переглянуто список файлів: \(item.spec.label)",
-                                detail: "Прочитано лише назви файлів, не їх вміст. Підозрілих процесів немає, тож це, найімовірніше, звичайна програма.",
+            emit(AlertEvent(severity: .info, title: "Folder listed: \(item.spec.label)",
+                                detail: "Only file names were read, not their contents. No suspicious processes, so this is most likely a regular app.",
                                 pid: nil, processName: nil, processPath: nil, dedupeKey: "list:\(item.spec.path)"))
             return
         }
-        var detail = "Файл: \(item.spec.path.replacingOccurrences(of: Rules.home, with: "~"))\n"
-        detail += "Жодна програма, якій можна читати ці дані, в цей момент не працювала.\n\n"
+        var detail = "File: \(item.spec.path.replacingOccurrences(of: Rules.home, with: "~"))\n"
+        detail += "None of the programs allowed to read this data was running at that moment.\n\n"
         if suspects.isEmpty {
-            detail += "Підозрілих процесів не видно. Якщо це був ти (ls, Finder, редактор) — все ок. Якщо ні — процес міг уже завершитись."
+            detail += "No suspicious processes found. If it was you (ls, Finder, an editor), all is fine. If not, the process may have already exited."
         } else {
-            detail += "Ймовірні винуватці:\n" + describeSuspects(suspects)
+            detail += "Likely culprits:\n" + describeSuspects(suspects)
         }
-        emit(AlertEvent(severity: strong == nil ? .medium : .high, title: "Хтось прочитав: \(item.spec.label)",
+        emit(AlertEvent(severity: strong == nil ? .medium : .high, title: "Something read: \(item.spec.label)",
                             detail: detail, pid: strong?.rec.pid, processName: strong?.rec.name,
                             processPath: strong?.rec.path, dedupeKey: "read:\(item.spec.path)"))
         recordRead(at: now, target: ti, label: item.spec.label)
@@ -454,7 +454,7 @@ final class Monitor {
     private func describeSuspects(_ list: [(rec: ProcRec, score: Int, reasons: [String])]) -> String {
         list.map { s in
             var line = "• \(s.rec.display) [\(s.reasons.joined(separator: ", "))]\n   \(String(s.rec.args.joined(separator: " ").prefix(200)))"
-            if !s.rec.lastConns.isEmpty { line += "\n   з'єднання: " + s.rec.lastConns.map(\.key).joined(separator: ", ") }
+            if !s.rec.lastConns.isEmpty { line += "\n   connections: " + s.rec.lastConns.map(\.key).joined(separator: ", ") }
             return line
         }.joined(separator: "\n")
     }
@@ -471,12 +471,12 @@ final class Monitor {
         var frozen = Set<pid_t>()
         for s in suspects where s.score >= 4 { frozen.formUnion(freeze(s.rec.pid)) }
         let top = suspects.first { $0.score >= 3 }
-        var detail = "За хвилину прочитано \(plural(labels.count, "чутливе місце", "чутливих місця", "чутливих місць")) (\(categories.map(\.rawValue).joined(separator: ", "))):\n"
+        var detail = "\(plural(labels.count, "sensitive location was", "sensitive locations were")) read within a minute (\(categories.map(\.rawValue).joined(separator: ", "))):\n"
         detail += labels.sorted().map { "• " + $0 }.joined(separator: "\n")
-        detail += suspects.isEmpty ? "\n\nВинуватця не знайдено серед живих процесів." :
-            "\n\nПідозрювані (у дужках — чому):\n" + describeSuspects(suspects)
-        detail += "\n\nПорада: відключи Wi-Fi, вбий підозрілі процеси, зміни паролі/ключі з іншого пристрою."
-        var ev = AlertEvent(severity: .critical, title: "Схоже на крадіжку даних (масове читання)", detail: detail,
+        detail += suspects.isEmpty ? "\n\nNo culprit found among running processes." :
+            "\n\nSuspects (reasons in brackets):\n" + describeSuspects(suspects)
+        detail += "\n\nAdvice: turn off Wi-Fi, kill the suspicious processes, change passwords/keys from another device."
+        var ev = AlertEvent(severity: .critical, title: "Looks like data theft (mass read)", detail: detail,
                             pid: top?.rec.pid, processName: top?.rec.name, processPath: top?.rec.path,
                             dedupeKey: "sweep")
         ev.frozen = frozen.sorted()
@@ -492,13 +492,13 @@ final class Monitor {
             guard r.interpreter || r.sign.isAdhocOrUnsigned || r.execFlag != nil else { continue }
             var score = 0
             var reasons: [String] = []
-            if let f = r.execFlag, f > .info { score += f.rawValue + 1; reasons.append("підозріла команда") }
+            if let f = r.execFlag, f > .info { score += f.rawValue + 1; reasons.append("suspicious command") }
             if let n = r.netFlag { score += 3; reasons.append(n) }
             let age = now.timeIntervalSince(r.start)
-            if age < 120 { score += 2; reasons.append("запущено \(Int(age)) с тому") }
-            else if age < 900 { score += 1; reasons.append("запущено \(Int(age / 60)) хв тому") }
-            if !r.interpreter && r.sign.isAdhocOrUnsigned { score += 1; reasons.append("без підпису") }
-            if !r.lastConns.isEmpty { score += 1; reasons.append("є з'єднання") }
+            if age < 120 { score += 2; reasons.append("started \(Int(age)) s ago") }
+            else if age < 900 { score += 1; reasons.append("started \(Int(age / 60)) min ago") }
+            if !r.interpreter && r.sign.isAdhocOrUnsigned { score += 1; reasons.append("unsigned") }
+            if !r.lastConns.isEmpty { score += 1; reasons.append("has connections") }
             // Age, missing signature and connections only rank candidates. On their own they just mean
             // "started around the same time" (a fresh `pnpm dev` coinciding with a benign periodic read),
             // so without concrete evidence a process can never reach suspect level.
@@ -554,8 +554,8 @@ final class Monitor {
             guard lstat(f, &st) == 0 else { continue }
             if let old = rcMtimes[f], !tsEqual(old, st.st_mtimespec) {
                 let tail = (try? String(contentsOfFile: f, encoding: .utf8))?.split(separator: "\n").suffix(4).joined(separator: "\n") ?? ""
-                emit(AlertEvent(severity: .medium, title: "Змінено \(f.replacingOccurrences(of: Rules.home, with: "~"))",
-                                    detail: "Цей файл виконується при кожному відкритті терміналу — шкідливе ПЗ додає туди свій запуск. Якщо редагував ти — ігноруй.\n\nОстанні рядки:\n\(tail)",
+                emit(AlertEvent(severity: .medium, title: "Changed \(f.replacingOccurrences(of: Rules.home, with: "~"))",
+                                    detail: "This file runs every time you open a terminal, and malware adds itself to it. If you edited it yourself, ignore this.\n\nLast lines:\n\(tail)",
                                     pid: nil, processName: nil, processPath: f, dedupeKey: "rc:\(f):\(st.st_mtimespec.tv_sec)"))
             }
             rcMtimes[f] = st.st_mtimespec
@@ -571,8 +571,8 @@ final class Monitor {
             else if let p = plist["Program"] as? String { program = p }
         }
         emit(AlertEvent(severity: .high,
-                            title: sinceLastRun ? "Новий автозапуск з'явився, поки BotAlert був вимкнений" : "Новий автозапуск: \(file)",
-                            detail: "Файл: \(path)\nЗапускає: \(program.isEmpty ? "?" : program)\n\nТак шкідливе ПЗ закріплюється в системі. Якщо ти нічого не встановлював — видали цей файл.",
+                            title: sinceLastRun ? "A new launch item appeared while BotAlert was off" : "New launch item: \(file)",
+                            detail: "File: \(path)\nRuns: \(program.isEmpty ? "?" : program)\n\nThis is how malware persists on a Mac. If you didn't install anything, delete this file.",
                             pid: nil, processName: nil, processPath: path, dedupeKey: "persist:\(path)"))
     }
 

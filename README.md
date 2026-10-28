@@ -178,3 +178,7 @@ You can also sign it with your own Apple Developer certificate:
 
 Architecture, design decisions and how to test changes are in [CLAUDE.md](CLAUDE.md). Render the UI to PNGs
 without running the app: `./build.sh --snapshot /tmp/shots`.
+
+## License
+
+[MIT](LICENSE). BotAlert comes with no warranty: it is an extra layer of defence, not a guarantee.

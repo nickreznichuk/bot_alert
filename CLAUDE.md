@@ -29,7 +29,7 @@ The only non-English literal is the `"пароль"` detection keyword in `Rules
 | `Sources/BotAlert/Proc.swift` | libproc/sysctl wrappers (pids, bsdinfo, argv via KERN_PROCARGS2, fds, vnode paths, TCP remotes), `Signing` (SecStaticCode, cached) |
 | `Sources/BotAlert/Rules.swift` | All policy: sensitive `Target`s + their `Owners`, interpreter/LOLBin lists, bad/common ports, RPC hosts, hidden-dir allow/IOC lists, `execVerdict` command-line rules, `plural()` |
 | `Sources/BotAlert/Monitor.swift` | Engine on a serial queue, 0.5 s timer: process diff → exec rules; atime tripwires; fd/socket scan; suspect scoring; sweep detection; freeze (SIGSTOP); LaunchAgents/rc-file watch |
-| `Sources/BotAlert/AlertStore.swift` | Main-thread `ObservableObject`: dedupe (10 min per key), notifications (UNUserNotificationCenter), log file, actions (freeze/resume/kill/trust), LaunchAgent toggle, reverse DNS for the Network tab |
+| `Sources/BotAlert/AlertStore.swift` | Main-thread `ObservableObject`: dedupe (10 min per key), notifications (UNUserNotificationCenter), log file, actions (freeze/resume/kill/trust), LaunchAgent toggle. `LiveState` (stats, connections, reverse DNS) lives here too, published only while a window is open |
 | `Sources/BotAlert/Views.swift` | Menu-bar label/icon, tabs: alerts, network, settings |
 | `Sources/BotAlert/BotAlertApp.swift` | `@main` (calls `SingleInstance.enforce()` in `App.init`), accessory activation policy, window opened from notification click |
 | `Sources/BotAlert/SingleInstance.swift` | One-copy guard / handover to the launchd job (separate file so the snapshot build, which skips `BotAlertApp.swift`, still links) |
@@ -78,6 +78,14 @@ The only non-English literal is the `"пароль"` detection keyword in `Rules
   another copy runs". launchd throttles restarts to once per 10 s if the process died within 10 s of starting.
 - Never run two monitors at once (e.g. a debug build next to the installed app): both re-arm the same
   tripwires and reads get missed. `AlertStore(startMonitor: false)` exists for the snapshot tool.
+- **UI must stay cheap while idle.** The app runs for weeks, so anything that redraws on every monitor tick
+  accumulates. An early version published stats/connections on `AlertStore` every 2 s, which rebuilt the
+  whole popup (400-alert list included) even while closed; the segmented `Picker` leaked observation records
+  on each rebuild (5.6 M heap objects, ~690 MB and 60% CPU after 5 days; tabs took seconds to switch). Now:
+  fast data goes through `LiveState`, is published only between the popup's `onAppear`/`onDisappear` and
+  only when it changed, and only small subviews observe it; derived alert lists are cached; tabs are plain
+  buttons. Check after UI changes: `heap $(pgrep -x BotAlert) -s | head -30` before/after opening the popup
+  and switching tabs a few dozen times should stay ~50 MB, and idle CPU well under 1%.
 - A process caught between fork and exec shows the parent's binary — records younger than 5 s are rebuilt
   if their path changes.
 

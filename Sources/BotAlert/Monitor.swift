@@ -26,7 +26,7 @@ struct ConnRow: Identifiable, Hashable {
     let flagged: Bool
 }
 
-struct MonitorStats {
+struct MonitorStats: Equatable {
     var watchedByCategory: [Category: Int] = [:]
     var processes = 0
     var scanned = 0

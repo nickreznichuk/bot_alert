@@ -33,7 +33,7 @@ enum StatusIcon {
 struct MenuLabel: View {
     @ObservedObject var store: AlertStore
     var body: some View {
-        let n = store.unseen.count
+        let n = store.unseenCount
         HStack(spacing: 2) {
             Image(nsImage: StatusIcon.image(store.worstUnseen, paused: store.paused))
             if n > 0 { Text("\(n)") }
@@ -48,23 +48,27 @@ struct MainView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Picker("", selection: $tab) {
-                Text("Alerts (\(store.visibleAlerts.count))").tag(0)
-                Text("Network (\(store.connections.count))").tag(1)
-                Text("Settings").tag(2)
+            // Plain buttons, not a segmented Picker: on macOS 26 the Picker's tag bookkeeping leaked on every
+            // redraw (hundreds of MB after days of uptime, and the popup got slower and slower).
+            HStack(spacing: 2) {
+                TabButton(index: 0, tab: $tab) { Text("Alerts (\(store.visibleAlerts.count))") }
+                TabButton(index: 1, tab: $tab) { NetworkTabTitle(live: store.live) }
+                TabButton(index: 2, tab: $tab) { Text("Settings") }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            .padding(2)
+            .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.06)))
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
             Divider()
             switch tab {
             case 0: AlertsList(store: store)
-            case 1: ConnectionsList(store: store)
+            case 1: ConnectionsList(live: store.live)
             default: SettingsPane(store: store)
             }
         }
         .frame(width: 480, height: 600)
+        .onAppear { store.live.viewAppeared() }
+        .onDisappear { store.live.viewDisappeared() }
     }
 
     private var header: some View {
@@ -73,8 +77,7 @@ struct MainView: View {
                 .resizable().frame(width: 26, height: 26)
             VStack(alignment: .leading, spacing: 2) {
                 Text(statusTitle).font(.headline)
-                Text("Watching \(store.stats.processes) processes · \(plural(store.stats.watchedByCategory.values.reduce(0, +), "file trap", "file traps"))")
-                    .font(.caption).foregroundStyle(.secondary)
+                WatchingLine(live: store.live)
             }
             Spacer()
             Toggle("Pause", isOn: $store.paused).toggleStyle(.switch).controlSize(.small)
@@ -84,8 +87,41 @@ struct MainView: View {
 
     private var statusTitle: String {
         if store.paused { return "Monitoring paused" }
-        let n = store.unseen.count
+        let n = store.unseenCount
         return n == 0 ? "All quiet" : plural(n, "new alert", "new alerts")
+    }
+}
+
+struct TabButton<Label: View>: View {
+    let index: Int
+    @Binding var tab: Int
+    @ViewBuilder var label: Label
+
+    var body: some View {
+        let selected = tab == index
+        Button { tab = index } label: {
+            label
+                .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 5).fill(selected ? Color(nsColor: .controlBackgroundColor) : .clear)
+                    .shadow(color: .black.opacity(selected ? 0.15 : 0), radius: 1, y: 0.5))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct NetworkTabTitle: View {
+    @ObservedObject var live: LiveState
+    var body: some View { Text("Network (\(live.connections.count))") }
+}
+
+struct WatchingLine: View {
+    @ObservedObject var live: LiveState
+    var body: some View {
+        Text("Watching \(live.stats.processes) processes · \(plural(live.stats.watchedByCategory.values.reduce(0, +), "file trap", "file traps"))")
+            .font(.caption).foregroundStyle(.secondary)
     }
 }
 
@@ -109,7 +145,7 @@ struct AlertsList: View {
             }
             Divider()
             HStack {
-                Button("Mark all seen") { store.markAllSeen() }.disabled(store.unseen.isEmpty)
+                Button("Mark all seen") { store.markAllSeen() }.disabled(store.unseenCount == 0)
                 Button("Clear") { store.clear() }.disabled(store.alerts.isEmpty)
                 Spacer()
                 Button("Log") { store.openLog() }
@@ -177,18 +213,18 @@ struct AlertRow: View {
 }
 
 struct ConnectionsList: View {
-    @ObservedObject var store: AlertStore
+    @ObservedObject var live: LiveState
 
     var body: some View {
-        if store.connections.isEmpty {
+        if live.connections.isEmpty {
             VStack { Spacer(); Text("No active connections").foregroundStyle(.secondary); Spacer() }
         } else {
-            List(store.connections) { c in
+            List(live.connections) { c in
                 HStack(alignment: .top) {
                     Circle().fill(c.flagged ? Color.red : Color.green.opacity(0.6)).frame(width: 7, height: 7).padding(.top, 5)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("\(c.name)  ·  pid \(c.pid)").font(.system(size: 12, weight: .medium))
-                        Text("\(c.ip):\(c.port)  \(store.hosts[c.ip].flatMap { $0.isEmpty ? nil : $0 } ?? "")")
+                        Text("\(c.ip):\(c.port)  \(live.hosts[c.ip].flatMap { $0.isEmpty ? nil : $0 } ?? "")")
                             .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
                         Text("\(c.state) · \(c.signLabel)").font(.caption2).foregroundStyle(.secondary)
                     }
@@ -211,14 +247,7 @@ struct SettingsPane: View {
                     get: { store.launchAtLogin }, set: { store.setLaunchAtLogin($0) }))
             }
             Section("What is protected") {
-                ForEach(Category.allCases, id: \.self) { c in
-                    HStack {
-                        Text(c.rawValue)
-                        Spacer()
-                        Text(c == .keychain ? "file opens" : plural(store.stats.watchedByCategory[c] ?? 0, "trap", "traps"))
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                ProtectedList(live: store.live)
                 Text("Plus: suspicious commands (curl|sh, node -e, fake password prompts, security), interpreter connections (node/python), new launch items and ~/.zshrc changes.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -243,12 +272,34 @@ struct SettingsPane: View {
             }
             Section {
                 HStack {
-                    Text("Scan: \(store.stats.scanned) processes in \(String(format: "%.1f", store.stats.scanMs)) ms").font(.caption).foregroundStyle(.secondary)
+                    ScanLine(live: store.live)
                     Spacer()
                     Button("Quit BotAlert") { NSApp.terminate(nil) }
                 }
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+struct ProtectedList: View {
+    @ObservedObject var live: LiveState
+    var body: some View {
+        ForEach(Category.allCases, id: \.self) { c in
+            HStack {
+                Text(c.rawValue)
+                Spacer()
+                Text(c == .keychain ? "file opens" : plural(live.stats.watchedByCategory[c] ?? 0, "trap", "traps"))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+struct ScanLine: View {
+    @ObservedObject var live: LiveState
+    var body: some View {
+        Text("Scan: \(live.stats.scanned) processes in \(String(format: "%.1f", live.stats.scanMs)) ms")
+            .font(.caption).foregroundStyle(.secondary)
     }
 }

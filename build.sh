@@ -64,6 +64,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 swiftc -O -sdk "$SDK" -target "$ARCH-apple-macos13" -parse-as-library \
   -o "$APP/Contents/MacOS/BotAlert" Sources/BotAlert/*.swift
+cp Resources/AppIcon.icns "$APP/Contents/Resources/"   # regenerate with tools/icon/make_icon.swift
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -74,6 +75,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleName</key><string>BotAlert</string>
   <key>CFBundleDisplayName</key><string>BotAlert</string>
   <key>CFBundleExecutable</key><string>BotAlert</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleVersion</key><string>1</string>

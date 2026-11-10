@@ -33,6 +33,7 @@ The only non-English literal is the `"пароль"` detection keyword in `Rules
 | `Sources/BotAlert/Views.swift` | Menu-bar label/icon, tabs: alerts, network, settings |
 | `Sources/BotAlert/BotAlertApp.swift` | `@main` (calls `SingleInstance.enforce()` in `App.init`), accessory activation policy, window opened from notification click |
 | `Sources/BotAlert/SingleInstance.swift` | One-copy guard / handover to the launchd job (separate file so the snapshot build, which skips `BotAlertApp.swift`, still links) |
+| `tools/icon/make_icon.swift` | Draws the app icon in code → `Resources/AppIcon.icns` (copied into the bundle by `build.sh`) + a 512 px PNG for the README. Compile with `swiftc` and run from the repo root after changing the design |
 | `tools/simulate/*` | Harmless attack simulations (TEST-NET IPs, only list dirs / hold a dir fd, never read secrets) |
 | `tools/snapshot/main.swift` | Offscreen UI renderer used by `--snapshot` |
 | `tools/who_reads.py` | Diagnoses false positives: polls a path's atime at 20 Hz and prints young processes + holders on each read |

@@ -1,3 +1,5 @@
+<p align="center"><img src="Resources/AppIcon.png" width="128" alt="BotAlert icon"></p>
+
 # BotAlert
 
 A tiny macOS menu-bar app that warns you when something is stealing your data: reading SSH keys, browser
